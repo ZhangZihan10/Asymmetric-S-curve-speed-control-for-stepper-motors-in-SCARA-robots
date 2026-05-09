@@ -7,7 +7,7 @@ This project proposes an optimized motion control method for a stepper-motor-dri
 ## Demo
 
 <p align="center">
-  <img src="Demo.gif" width="800"/>
+  <img src="Demo.gif" width="400"/>
 </p>
 
 ---
