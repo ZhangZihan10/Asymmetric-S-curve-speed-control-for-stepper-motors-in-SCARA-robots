@@ -1,0 +1,31 @@
+### Objective-C
+# Xcode user settings
+xcuserdata/
+
+# Xcode build data
+DerivedData/
+
+# Obj-C/Swift specific
+*.hmap
+
+# App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+### Windows
+# Windows thumbnail cache files
+Thumbs.db
+
+# Folder config file
+[Dd]esktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows shortcuts
+*.lnk

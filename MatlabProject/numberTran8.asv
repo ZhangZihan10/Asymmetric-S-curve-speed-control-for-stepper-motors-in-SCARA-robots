@@ -1,0 +1,153 @@
+function numberTran8(arduino, path)
+
+%%失败
+    % ==========================================================
+    % 终极时间同步 S 曲线控制 (适配 Arduino 时间驱动引擎)
+    % 特性：9参数下发、前向后向包络扫描、精确时间控制
+    % ==========================================================
+    
+    num_points = size(path, 1);
+    %if num_points < 2
+    %    error('路径点数量过少！');
+    %end
+    
+    % 1. 物理极限设置 (严格锁定 Z<2000Hz, Y/X<1000Hz)
+    V_max_Z = 0.0097; A_max_Z = 0.03; D_max_Z = 0.03; 
+    V_max_Y = 1.05;   A_max_Y = 5.0;  D_max_Y = 4.0;  
+    V_max_X = 0.68;   A_max_X = 5.0;  D_max_X = 4.0;
+    
+    V_limits = [V_max_Z * 205560, V_max_Y * 945, V_max_X * 1455];
+    A_limits = [A_max_Z * 205560, A_max_Y * 945, A_max_X * 1455];
+    D_limits = [D_max_Z * 205560, D_max_Y * 945, D_max_X * 1455];
+    
+    V_MAX_LIMITS = [2000, 1000, 1000]; 
+    V_limits = min(V_limits, V_MAX_LIMITS);
+    
+    % 2. 映射到脉冲空间
+    motor_pos = zeros(num_points, 4);
+    for i = 1:num_points
+        z_pulse = path(i, 1) * 205560 - 11667;
+        y_pulse = path(i, 2) * 945 - 1900;
+        x_pulse = 0.8 * y_pulse + 3419.6 + path(i, 3) * 1455; 
+        motor_pos(i, :) = round([z_pulse, y_pulse, x_pulse, path(i, 4)*180/pi], 2);
+    end
+    
+    delta_pulses = diff(motor_pos(:, 1:3)); 
+    abs_delta = abs(delta_pulses);
+    num_segments = num_points - 1;
+    [dS_dom, dom_idx_arr] = max(abs_delta, [], 2); 
+    
+    % 3. 前瞻与包络扫描 (确定节点安全速度)
+    V_max_seg = zeros(num_segments, 1);
+    for k = 1:num_segments
+        r = abs_delta(k,:) / dS_dom(k);
+        V_max_seg(k) = min([V_limits(1)/max(r(1),1e-5), V_limits(2)/max(r(2),1e-5), V_limits(3)/max(r(3),1e-5), V_limits(dom_idx_arr(k))]);
+    end
+    
+    V_node = zeros(num_points, 1); 
+    for k = 2:num_segments
+        if isequal(sign(delta_pulses(k-1,:)), sign(delta_pulses(k,:))) && (dom_idx_arr(k-1)==dom_idx_arr(k))
+            V_node(k) = min(V_max_seg(k-1), V_max_seg(k)) * 0.9;
+        else
+            V_node(k) = 0;
+        end
+    end
+    
+    % 双向扫描
+    for k = 2:num_points
+        V_node(k) = min(V_node(k), sqrt(V_node(k-1)^2 + 2*A_limits(dom_idx_arr(k-1))*dS_dom(k-1)));
+    end
+    for k = num_points-1:-1:1
+        V_node(k) = min(V_node(k), sqrt(V_node(k+1)^2 + 2*D_limits(dom_idx_arr(k))*dS_dom(k)));
+    end
+    
+    % 4. 提取下发参数与绘图数据
+    V_out = zeros(num_points, 3);
+    T_out = zeros(num_points, 1);
+    
+    t_plot = []; V_plot = zeros(0,3); A_plot = zeros(0,3); t_nodes = zeros(num_points,1);
+    curr_t = 0;
+    
+    for k = 1:num_segments
+        vs = V_node(k); ve = V_node(k+1);
+        [vp, T_ja, T_jd, Ta, Tc, Td, Ttot] = calc_asym_logic_cp(0, dS_dom(k), V_max_seg(k), A_limits(dom_idx_arr(k)), D_limits(dom_idx_arr(k)), vs, ve);
+        
+        T_out(k) = max(Ttot, 0.001);
+        r = abs_delta(k,:) / dS_dom(k);
+        V_out(k,:) = ve * r;
+        
+        % 绘图采样
+        dt_arr = linspace(0, T_out(k), 50);
+        v_seg = zeros(50,3); a_seg = zeros(50,3);
+        for i=1:50
+            % (此处省略 7 段 S 曲线解析方程，逻辑同前，仅按比例分配给3轴)
+            % v_seg(i,:) = ... 
+        end
+        % (绘图部分代码参考之前版本插入即可)
+        t_nodes(k) = curr_t;
+        curr_t = curr_t + T_out(k);
+    end
+    t_nodes(end) = curr_t;
+    
+    % 5. 绘图 (略过，逻辑同前)
+    
+    % ==========================================================
+    % 6. 自动化两阶段双模下发 (1. 归位就绪 -> 2. 全速避障)
+    % ==========================================================
+    if arduino.Status == "closed", fopen(arduino); end
+    flush(arduino); 
+    pause(0.5); 
+    
+    % --- 阶段一：下发唯一起点，触发安全归位模式 ---
+    fprintf('▶ 阶段一：正在调度机械臂平滑归位至规划起点...\n');
+    writeline(arduino, 'BEGIN,1');
+    pause(0.1); 
+    
+    % 发送第 1 个点的参数 (速度和时间参数此时用0填充，单点模式下硬件会自动使用原生加减速)
+    str_start = sprintf('q,%.2f,%.2f,%.2f,%.3f,0,0,0,0', ...
+                        motor_pos(1, 1), motor_pos(1, 2), motor_pos(1, 3), motor_pos(1, 4));
+    writeline(arduino, str_start);
+    pause(0.1); 
+    writeline(arduino, 'RUN');
+    
+    % 阻塞等待 Arduino 返回到达信号
+    is_ready = false;
+    while ~is_ready
+        if arduino.NumBytesAvailable > 0
+            response = strtrim(readline(arduino));
+            if strcmp(response, "FINISHED_ALL")
+                is_ready = true;
+            end
+        end
+        pause(0.01);
+    end
+    fprintf('  ✓ 已安全到达起点位置，机械臂就绪。\n');
+    pause(0.5); % 给真机留半秒钟的视觉停顿
+    
+    
+    % --- 阶段二：下发完整轨迹，触发时间同步高阶插补 ---
+    fprintf('▶ 阶段二：正在下发 %d 个避障轨迹节点 (启动高阶动态插补)...\n', num_points);
+    writeline(arduino, sprintf('BEGIN,%d', num_points));
+    pause(0.2); 
+    
+    for i = 1:num_points
+        % 发送完整的 9 参数协议
+        str_data = sprintf('q,%.2f,%.2f,%.2f,%.3f,%.2f,%.2f,%.2f,%.4f', ...
+                           motor_pos(i, 1), motor_pos(i, 2), motor_pos(i, 3), motor_pos(i, 4), ...
+                           V_out(i, 1), V_out(i, 2), V_out(i, 3), T_out(i));
+        writeline(arduino, str_data);
+        pause(0.01); 
+    end
+    
+    writeline(arduino, 'RUN');
+    disp('  ✓ 避障轨迹下发完毕！');
+end
+
+function [vp, T_ja, T_jd, Ta, Tc, Td, Ttot] = calc_asym_logic_cp(p1, p2, vmax, aa, ad, vs, ve)
+    S = abs(p2-p1); if S<1e-4, S=1e-4; end
+    S_l = (0.75*(vmax^2-vs^2)/aa) + (0.75*(vmax^2-ve^2)/ad);
+    if S>=S_l, vp=vmax; Tc=(S-S_l)/vmax; else
+    vp=sqrt(((4/3)*S*aa*ad + vs^2*ad + ve^2*aa)/(aa+ad)); Tc=0; end
+    T_ja=(vp-vs)/(2*aa); T_jd=(vp-ve)/(2*ad);
+    Ta=3*T_ja; Td=3*T_jd; Ttot=Ta+Tc+Td;
+end
