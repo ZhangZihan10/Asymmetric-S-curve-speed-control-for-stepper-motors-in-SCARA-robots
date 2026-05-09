@@ -1,7 +1,5 @@
 # SCARA Robot Smooth Motion Control
 
-# SCARA Robot Smooth Motion Control
-
 ## Introduction
 
 This project proposes an optimized motion control method for a stepper-motor-driven SCARA robot under short-stroke and high-frequency start-stop conditions.
@@ -39,13 +37,3 @@ The goal is to improve trajectory smoothness, joint coordination, and motion eff
 - Pulse-frequency-based synchronization
 - Real-time stepper motor drive control
 - Coordinated multi-joint motion
-
----
-
-## Experimental Results
-
-- Path length reduced by **1.84%–5.40%**
-- Peak jerk reduced from:
-
-```text
-5.0 × 10^5 mm/s³ → 1.0 × 10^3 mm/s³
