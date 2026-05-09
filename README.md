@@ -1,8 +1,14 @@
 # SCARA Robot Smooth Motion Control
 
+# SCARA Robot Smooth Motion Control
+
 ## Introduction
 
 This project proposes an optimized motion control method for a stepper-motor-driven SCARA robot under short-stroke and high-frequency start-stop conditions.
+
+## Demo
+
+<video src="Demo.mp4" controls width="100%"></video>
 
 The method combines:
 
