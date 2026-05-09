@@ -6,8 +6,11 @@ This project proposes an optimized motion control method for a stepper-motor-dri
 
 ## Demo
 
-<video src="Demo.mp4" controls width="100%"></video>
+<p align="center">
+  <img src="Demo.gif" width="800"/>
+</p>
 
+---
 The method combines:
 
 - RRT obstacle avoidance path planning
